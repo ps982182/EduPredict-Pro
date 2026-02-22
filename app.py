@@ -5,37 +5,34 @@ import joblib
 import pandas as pd
 import plotly.express as px
 import datetime
-import numpy as np
 
-# ================= PAGE CONFIG =================
-st.set_page_config(page_title="EduPredict Pro", layout="wide")
+# ================= CONFIG =================
+st.set_page_config(page_title="EduPredict-X", layout="wide")
 
-# ================= PREMIUM HERO =================
+# ================= HEADER =================
 st.markdown("""
 <style>
 .hero {
-    padding: 35px;
-    border-radius: 20px;
+    padding: 25px;
+    border-radius: 15px;
     background: linear-gradient(135deg, #1e1e2f, #2c2c54);
-    box-shadow: 0px 8px 30px rgba(0,0,0,0.4);
-    margin-bottom: 30px;
+    margin-bottom: 25px;
 }
 .hero-title {
-    font-size: 42px;
+    font-size: 36px;
     font-weight: 800;
     color: white;
 }
 .hero-subtitle {
-    font-size: 18px;
+    font-size: 16px;
     color: #c7c7ff;
-    margin-top: 8px;
 }
 </style>
 
 <div class="hero">
-    <div class="hero-title">EduPredict Pro</div>
+    <div class="hero-title">EduPredict-X</div>
     <div class="hero-subtitle">
-        AI-Based Academic Risk Monitoring & Multi-User Analytics System
+        AI-Based Academic Risk Forecasting & Intervention Simulator
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -50,46 +47,49 @@ c = conn.cursor()
 
 c.execute("""
 CREATE TABLE IF NOT EXISTS users(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT,
-    password TEXT,
-    role TEXT
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+username TEXT,
+password TEXT,
+role TEXT
 )
 """)
 
 c.execute("""
-CREATE TABLE IF NOT EXISTS subjects(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT,
-    subject TEXT,
-    reading INTEGER,
-    writing INTEGER,
-    risk TEXT,
-    probability REAL,
-    timestamp TEXT
+CREATE TABLE IF NOT EXISTS records(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+username TEXT,
+subject TEXT,
+reading INTEGER,
+writing INTEGER,
+risk TEXT,
+prob REAL,
+timestamp TEXT
 )
 """)
-
 conn.commit()
 
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+def hash_password(p):
+    return hashlib.sha256(p.encode()).hexdigest()
 
-# ================= AUTH MENU =================
+# ================= SESSION =================
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-menu = st.sidebar.selectbox("Menu", ["Login", "Register"] if not st.session_state.logged_in else ["Dashboard"])
+# ================= AUTH MENU =================
+menu = st.sidebar.selectbox(
+    "Menu",
+    ["Login", "Register"] if not st.session_state.logged_in else ["Dashboard"]
+)
 
 # ================= REGISTER =================
 if menu == "Register":
-    st.header("Create Account")
+    st.header("Register")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
-    role = st.selectbox("Role", ["Student", "Teacher", "Admin"])
+    role = st.selectbox("Role", ["Student", "Admin"])
 
-    if st.button("Register"):
-        c.execute("INSERT INTO users(username,password,role) VALUES(?,?,?)",
+    if st.button("Create Account"):
+        c.execute("INSERT INTO users VALUES(NULL,?,?,?)",
                   (username, hash_password(password), role))
         conn.commit()
         st.success("Account Created Successfully")
@@ -116,190 +116,193 @@ if menu == "Login":
 # ================= DASHBOARD =================
 if st.session_state.logged_in:
 
-    st.sidebar.success(f"Welcome {st.session_state.username} ({st.session_state.role})")
+    st.sidebar.success(f"{st.session_state.username} ({st.session_state.role})")
 
     if st.sidebar.button("Logout"):
         st.session_state.clear()
         st.rerun()
 
-    # ================= STUDENT =================
+    # ==========================================================
+    # ========================== STUDENT =======================
+    # ==========================================================
+
     if st.session_state.role == "Student":
 
         page = st.sidebar.selectbox(
             "Student Dashboard",
-            ["Add Subject", "My Analytics", "Trend Over Time", "Upload CSV"]
+            ["Risk Forecasting", "Personal Analytics", "Trend Over Time"]
         )
 
-        # -------- ADD SUBJECT --------
-        if page == "Add Subject":
+        # ================= RISK FORECASTING =================
+        if page == "Risk Forecasting":
 
-            subject = st.text_input("Subject Name")
+            subject = st.text_input("Course / Subject")
             reading = st.slider("Reading Score", 0, 100)
             writing = st.slider("Writing Score", 0, 100)
 
-            if st.button("Predict"):
+            if st.button("Predict Academic Risk"):
 
                 df_input = pd.DataFrame([{
-                    "gender": 0,
-                    "race/ethnicity": 0,
-                    "parental level of education": 0,
-                    "lunch": 0,
-                    "test preparation course": 0,
                     "reading score": reading,
                     "writing score": writing
                 }])
 
-                prediction = model.predict(df_input)[0]
-                probability = model.predict_proba(df_input).max()
-                risk_label = risk_map[prediction]
+                pred = model.predict(df_input)[0]
+                prob = model.predict_proba(df_input).max()
+                risk = risk_map[pred]
+
+                # Save baseline
+                st.session_state.base_reading = reading
+                st.session_state.base_writing = writing
+                st.session_state.base_prob = prob
+                st.session_state.base_risk = risk
+
                 timestamp = datetime.datetime.now().strftime("%Y-%m-%d")
 
                 c.execute("""
-                INSERT INTO subjects(username,subject,reading,writing,
-                risk,probability,timestamp)
-                VALUES(?,?,?,?,?,?,?)
-                """, (st.session_state.username, subject,
-                      reading, writing, risk_label,
-                      float(probability), timestamp))
-
+                INSERT INTO records VALUES(NULL,?,?,?,?,?,?,?)
+                """, (st.session_state.username,
+                      subject, reading, writing,
+                      risk, float(prob), timestamp))
                 conn.commit()
 
-                st.success(f"{subject} → {risk_label}")
-                st.progress(float(probability))
+                st.success(f"Predicted Risk Category: {risk}")
+                st.metric("Risk Probability", round(prob,4))
 
-                # ===== AI RECOMMENDATION ENGINE =====
-                st.subheader("AI Recommendation")
+                # ================= USER-FRIENDLY EXPLANATION =================
+                st.subheader("What This Means")
 
-                if risk_label == "High Risk":
-                    st.error("High Academic Risk Detected")
-                    st.write("• Increase study hours to 3–4 per day")
-                    st.write("• Focus on weakest concepts first")
-                    st.write("• Solve 2 mock tests weekly")
-                    st.write("• Seek teacher mentoring")
-
-                elif risk_label == "Medium Risk":
-                    st.warning("Moderate Risk – Improvement Needed")
-                    st.write("• Structured weekly revision")
-                    st.write("• Improve weak areas")
-                    st.write("• Regular practice tests")
-
+                if prob > 0.9:
+                    st.success("Your performance is highly stable. Risk of academic underperformance is extremely low.")
+                elif prob > 0.7:
+                    st.warning("Moderate stability detected. Some improvement could further reduce risk.")
                 else:
-                    st.success("Low Risk – Excellent Performance")
-                    st.write("• Maintain consistency")
-                    st.write("• Practice advanced questions")
+                    st.error("High vulnerability detected. Targeted improvement is strongly recommended.")
 
-        # -------- MY ANALYTICS --------
-        if page == "My Analytics":
+                # ================= PERFORMANCE DIAGNOSTICS =================
+                st.divider()
+                st.subheader("Skill Analysis")
+
+                optimal = 75
+                read_gap = optimal - reading
+                write_gap = optimal - writing
+
+                col1, col2 = st.columns(2)
+                col1.metric("Reading Gap (Target 75)", read_gap)
+                col2.metric("Writing Gap (Target 75)", write_gap)
+
+                if read_gap > write_gap:
+                    st.info("Primary area to improve: Reading skills.")
+                elif write_gap > read_gap:
+                    st.info("Primary area to improve: Writing skills.")
+                else:
+                    st.info("Both skills are balanced.")
+
+            # ================= SIMULATION =================
+            if "base_reading" in st.session_state:
+
+                st.divider()
+                st.subheader("Improvement Simulation")
+
+                improve_read = st.slider("Increase Reading Score By", 0, 20)
+                improve_write = st.slider("Increase Writing Score By", 0, 20)
+
+                if st.button("Run Simulation"):
+
+                    new_read = st.session_state.base_reading + improve_read
+                    new_write = st.session_state.base_writing + improve_write
+
+                    df_sim = pd.DataFrame([{
+                        "reading score": new_read,
+                        "writing score": new_write
+                    }])
+
+                    new_pred = model.predict(df_sim)[0]
+                    new_prob = model.predict_proba(df_sim).max()
+                    new_risk = risk_map[new_pred]
+
+                    st.success(f"New Risk Category: {new_risk}")
+                    st.metric("Updated Probability", round(new_prob,4))
+
+                    delta = new_prob - st.session_state.base_prob
+
+                    st.subheader("Impact of Improvement")
+
+                    st.metric("Probability Change", round(delta,4))
+
+                    if abs(delta) < 0.01:
+                        st.info("Your performance was already strong. Further improvement gives minimal change.")
+                    elif delta < 0:
+                        st.success("Improvement meaningfully reduced your academic risk.")
+                    else:
+                        st.warning("Improvement did not reduce risk significantly.")
+
+                    # Visual Comparison
+                    compare_df = pd.DataFrame({
+                        "Scenario": ["Before", "After"],
+                        "Probability": [
+                            st.session_state.base_prob,
+                            new_prob
+                        ]
+                    })
+
+                    fig = px.bar(compare_df, x="Scenario", y="Probability",
+                                 color="Scenario",
+                                 title="Risk Probability Comparison")
+
+                    st.plotly_chart(fig, width="stretch")
+
+        # ================= PERSONAL ANALYTICS =================
+        if page == "Personal Analytics":
 
             df = pd.read_sql_query(
-                f"SELECT * FROM subjects WHERE username='{st.session_state.username}'",
+                f"SELECT * FROM records WHERE username='{st.session_state.username}'",
                 conn
             )
 
             if df.empty:
                 st.info("No records found.")
             else:
-
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Total Subjects", len(df))
-                col2.metric("Average Probability", round(df["probability"].mean(), 2))
+                col2.metric("Average Probability", round(df["prob"].mean(),4))
                 col3.metric("High Risk %", round((df["risk"]=="High Risk").mean()*100,2))
 
-                fig = px.bar(df, x="subject", y="probability", color="risk",
-                             title="Subject Risk Probability")
-                st.plotly_chart(fig, use_container_width=True)
+                fig = px.bar(df, x="subject", y="prob", color="risk")
+                st.plotly_chart(fig, width="stretch")
 
-                st.divider()
-
-                # Download Full CSV
                 st.download_button(
-                    "Download Full Data (CSV)",
+                    "Download CSV",
                     df.to_csv(index=False).encode(),
-                    "my_performance.csv",
-                    "text/csv"
+                    "my_data.csv"
                 )
 
-                # Download Summary CSV
-                summary = pd.DataFrame({
-                    "Total Subjects":[len(df)],
-                    "Average Probability":[round(df["probability"].mean(),2)],
-                    "High Risk %":[round((df["risk"]=="High Risk").mean()*100,2)]
-                })
-
-                st.download_button(
-                    "Download Summary Report (CSV)",
-                    summary.to_csv(index=False).encode(),
-                    "summary_report.csv",
-                    "text/csv"
-                )
-
-        # -------- TREND --------
+        # ================= TREND =================
         if page == "Trend Over Time":
 
             df = pd.read_sql_query(
-                f"SELECT * FROM subjects WHERE username='{st.session_state.username}'",
+                f"SELECT * FROM records WHERE username='{st.session_state.username}'",
                 conn
             )
 
             if not df.empty:
-                fig = px.line(df, x="timestamp", y="probability",
-                              markers=True,
-                              title="Risk Trend Over Time")
-                st.plotly_chart(fig, use_container_width=True)
-
-        # -------- BULK CSV --------
-        if page == "Upload CSV":
-
-            uploaded = st.file_uploader("Upload CSV with columns: subject,reading,writing")
-
-            if uploaded:
-                df_upload = pd.read_csv(uploaded)
-                results = []
-
-                for _, row in df_upload.iterrows():
-                    df_input = pd.DataFrame([{
-                        "gender": 0,
-                        "race/ethnicity": 0,
-                        "parental level of education": 0,
-                        "lunch": 0,
-                        "test preparation course": 0,
-                        "reading score": row["reading"],
-                        "writing score": row["writing"]
-                    }])
-
-                    prediction = model.predict(df_input)[0]
-                    probability = model.predict_proba(df_input).max()
-
-                    results.append({
-                        "subject": row["subject"],
-                        "risk": risk_map[prediction],
-                        "probability": probability
-                    })
-
-                st.dataframe(pd.DataFrame(results))
-
-    # ================= TEACHER =================
-    if st.session_state.role == "Teacher":
-
-        df = pd.read_sql_query("SELECT * FROM subjects", conn)
-
-        if not df.empty:
-            st.metric("Total Records", len(df))
-            st.metric("High Risk %",
-                      round((df["risk"]=="High Risk").mean()*100,2))
-
-            fig = px.histogram(df, x="risk", color="risk",
-                               title="Class Risk Distribution")
-            st.plotly_chart(fig, use_container_width=True)
+                fig = px.line(df, x="timestamp", y="prob", markers=True)
+                st.plotly_chart(fig, width="stretch")
 
     # ================= ADMIN =================
     if st.session_state.role == "Admin":
 
-        df = pd.read_sql_query("SELECT * FROM subjects", conn)
+        st.header("Model Benchmarking")
 
-        st.metric("Total Predictions", len(df))
+        try:
+            results = pd.read_csv("model_results.csv")
+            st.dataframe(results)
 
-        if not df.empty:
-            fig = px.pie(df, names="risk",
-                         title="Global Risk Distribution")
-            st.plotly_chart(fig, use_container_width=True)
+            fig = px.bar(results, x="Model", y="Accuracy")
+            st.plotly_chart(fig, width="stretch")
+
+            best = results.sort_values("Accuracy", ascending=False).iloc[0]
+            st.success(f"Best Model: {best['Model']}")
+
+        except:
+            st.warning("Run train_model.py first.")
